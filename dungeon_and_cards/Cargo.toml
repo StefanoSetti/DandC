@@ -1,0 +1,9 @@
+[package]
+name = "dungeon_and_cards"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Iter over enums
+strum = "0.27"
+strum_macros = "0.27"
