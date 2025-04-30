@@ -1,16 +1,17 @@
+use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 /// A card is the central unit of the game,
 /// each card can have a suit and a rank.
 #[derive(Debug, PartialEq)]
 struct Card {
-    seed: Suit,
+    suit: Suit,
     rank: Rank,
 }
 
 /// The `suit` can be 1 of 4 types.
 
-#[derive(EnumIter, Debug, PartialEq)]
+#[derive(EnumIter, Debug, Eq, PartialEq, Clone, Copy, Hash)]
 enum Suit {
     Spades,
     Diamonds,
@@ -19,7 +20,7 @@ enum Suit {
 }
 
 /// The `rank` can be one of 13 values.
-#[derive(EnumIter, Debug, PartialEq)]
+#[derive(EnumIter, Debug, Eq, PartialEq, Clone, Copy, Hash)]
 enum Rank {
     Ace,
     Two,
@@ -41,8 +42,27 @@ struct Deck {
 }
 
 impl Deck {
-    fn new() -> Self {
-        todo!()
+    pub fn new() -> Self {
+        // Collect iters for `suits` and `ranks`.
+        let suits = Suit::iter();
+        let ranks = Rank::iter();
+
+        // NOTE:
+        // `map` would give you 4 piles (one per suit), each with 13 cards
+        // `flat_map` automatically spreads all 52 cards on one table.
+        let cards = suits
+            .into_iter()
+            .flat_map(|suit| {
+                ranks
+                    .clone() // One rank iterator per suit, so clone needed. (No clone would consume the iterator at the first suit)
+                    .into_iter()
+                    .map(move |rank| Card { suit, rank })
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("It should alway generate a deck of 52 cards");
+
+        Deck { cards }
     }
 }
 
@@ -53,9 +73,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn generate_card() {}
 
     #[test]
     fn new_deck_has_52_cards() {
@@ -69,7 +86,7 @@ mod tests {
         for i in 0..deck.cards.len() {
             for j in (i + 1)..deck.cards.len() {
                 assert!(
-                    deck.cards[i].seed != deck.cards[j].seed
+                    deck.cards[i].suit != deck.cards[j].suit
                         || deck.cards[i].rank != deck.cards[j].rank,
                     "Duplicate card found: {:?} and {:?}",
                     deck.cards[i],
@@ -85,7 +102,7 @@ mod tests {
         let mut counts = std::collections::HashMap::new();
 
         for card in &deck.cards {
-            *counts.entry(card.seed).or_insert(0) += 1;
+            *counts.entry(card.suit).or_insert(0) += 1;
         }
 
         assert_eq!(counts[&Suit::Spades], 13);
