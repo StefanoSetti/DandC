@@ -1,5 +1,3 @@
-use std::intrinsics::simd::simd_reduce_all;
-
 use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -41,8 +39,7 @@ enum Rank {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Deck {
-    cards: [Card; 52],
-    // seed:
+    cards: Vec<Card>,
 }
 
 impl Deck {
@@ -62,12 +59,12 @@ impl Deck {
                     .into_iter()
                     .map(move |rank| Card { suit, rank })
             })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("It should always generate a deck of 52 cards");
+            .collect::<Vec<_>>();
 
         Deck { cards }
     }
+
+    // TODO: pub fn len()
 
     /// Shuffles the deck randomly.
     pub fn shuffle(&mut self) {
@@ -76,13 +73,24 @@ impl Deck {
 
     /// Draws `k` card from the top of the deck.
     /// Once drawn the cards are removed from the deck.
-    pub fn draw(&mut self, number_of_draw: usize) -> Vec<Card> {
-        if number_of_draw > self.cards.len() {
+    pub fn draw(&mut self, number_of_draws: usize) -> Vec<Card> {
+        if number_of_draws == 0 {
+            return Vec::new(); // Edge case: avoid unnecessary allocation
+        }
+
+        let len = self.cards.len();
+        if number_of_draws > len {
             panic!("You are drawing too many cards from the deck!");
         }
-        let new_len = self.cards.len() - number_of_draw;
-        self.cards = std::mem::take(&mut self.cards)[..new_len];
-        Some(())
+
+        // Split the deck into two parts in O(1) time.
+        let split_idx = len - number_of_draws;
+        let mut drawn = self.cards.split_off(split_idx);
+
+        // Reverse to match "top of deck" semantics (optional).
+        drawn.reverse();
+
+        drawn
     }
 }
 
@@ -149,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn draw_a_card_and_remove_it_from_deck() {
+    fn draw_1_card_and_remove_it_from_deck() {
         let mut deck = Deck::new();
 
         // Draw 1 cars.
@@ -162,5 +170,29 @@ mod tests {
         // The drawn card should be not contained in the deck anymore.
         assert!(!deck.cards.contains(&drawn_card));
         assert_eq!(deck.cards.len(), 51);
+    }
+
+    #[test]
+    fn draw_10_card_and_remove_it_from_deck() {
+        let mut deck = Deck::new();
+
+        // Draw 10 cars.
+        let drawn_card = deck.draw(10);
+
+        // The drawn card should be not contained in the deck anymore.
+        assert!(drawn_card.iter().all(|card| !deck.cards.contains(card)));
+        assert_eq!(deck.cards.len(), 42);
+    }
+
+    #[test]
+    fn draw_0_card_and_remove_it_from_deck() {
+        let mut deck = Deck::new();
+
+        // Draw 0 cars.
+        let drawn_card = deck.draw(0);
+
+        // The array should contain 0 cards.
+        assert_eq!(drawn_card.len(), 0);
+        assert_eq!(deck.cards.len(), 52);
     }
 }
