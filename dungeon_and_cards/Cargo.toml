@@ -7,3 +7,5 @@ edition = "2021"
 # Iter over enums
 strum = "0.27"
 strum_macros = "0.27"
+# Random shuffle
+rand = "0.9"
