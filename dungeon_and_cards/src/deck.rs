@@ -1,3 +1,5 @@
+use core::fmt;
+
 use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -10,6 +12,12 @@ struct Card {
     rank: Rank,
 }
 
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}  {}", self.suit, self.rank)
+    }
+}
+
 /// The `suit` can be 1 of 4 types.
 #[derive(EnumIter, Debug, Eq, PartialEq, Clone, Copy, Hash)]
 enum Suit {
@@ -17,6 +25,17 @@ enum Suit {
     Diamonds,
     Clubs,
     Hearts,
+}
+
+impl fmt::Display for Suit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Suit::Spades => write!(f, "♠️"),
+            Suit::Diamonds => write!(f, "♦️"),
+            Suit::Clubs => write!(f, "♣️"),
+            Suit::Hearts => write!(f, "♥️"),
+        }
+    }
 }
 
 /// The `rank` can be one of 13 values.
@@ -35,6 +54,26 @@ enum Rank {
     Jack,
     Queen,
     King,
+}
+
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rank::Ace => write!(f, "A"),
+            Rank::Two => write!(f, "2"),
+            Rank::Three => write!(f, "3"),
+            Rank::Four => write!(f, "4"),
+            Rank::Five => write!(f, "5"),
+            Rank::Six => write!(f, "6"),
+            Rank::Seven => write!(f, "7"),
+            Rank::Eight => write!(f, "8"),
+            Rank::Nine => write!(f, "9"),
+            Rank::Ten => write!(f, "10"),
+            Rank::Jack => write!(f, "J"),
+            Rank::Queen => write!(f, "Q"),
+            Rank::King => write!(f, "K"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,7 +103,10 @@ impl Deck {
         Deck { cards }
     }
 
-    // TODO: pub fn len()
+    /// Returns the number of cards in the deck.
+    pub fn len(&self) -> usize {
+        self.cards.len()
+    }
 
     /// Shuffles the deck randomly.
     pub fn shuffle(&mut self) {
@@ -78,9 +120,9 @@ impl Deck {
             return Vec::new(); // Edge case: avoid unnecessary allocation
         }
 
-        let len = self.cards.len();
+        let len = self.len();
         if number_of_draws > len {
-            panic!("You are drawing too many cards from the deck!");
+            panic!("You are drawing too many cards from the deck!"); // TODO: generate error
         }
 
         // Split the deck into two parts in O(1) time.
@@ -101,14 +143,14 @@ mod tests {
     #[test]
     fn new_deck_has_52_cards() {
         let deck = Deck::new();
-        assert_eq!(deck.cards.len(), 52);
+        assert_eq!(deck.len(), 52);
     }
 
     #[test]
     fn all_cards_in_deck_are_unique() {
         let deck = Deck::new();
-        for i in 0..deck.cards.len() {
-            for j in (i + 1)..deck.cards.len() {
+        for i in 0..deck.len() {
+            for j in (i + 1)..deck.len() {
                 assert!(
                     deck.cards[i].suit != deck.cards[j].suit
                         || deck.cards[i].rank != deck.cards[j].rank,
@@ -146,7 +188,7 @@ mod tests {
         shuffled_deck.shuffle();
 
         // Check that all cards are still present (just order changed)
-        assert_eq!(original_deck.cards.len(), original_deck.cards.len());
+        assert_eq!(original_deck.len(), original_deck.len());
         assert!(original_deck
             .cards
             .iter()
@@ -169,7 +211,7 @@ mod tests {
 
         // The drawn card should be not contained in the deck anymore.
         assert!(!deck.cards.contains(&drawn_card));
-        assert_eq!(deck.cards.len(), 51);
+        assert_eq!(deck.len(), 51);
     }
 
     #[test]
@@ -181,7 +223,7 @@ mod tests {
 
         // The drawn card should be not contained in the deck anymore.
         assert!(drawn_card.iter().all(|card| !deck.cards.contains(card)));
-        assert_eq!(deck.cards.len(), 42);
+        assert_eq!(deck.len(), 42);
     }
 
     #[test]
@@ -193,6 +235,16 @@ mod tests {
 
         // The array should contain 0 cards.
         assert_eq!(drawn_card.len(), 0);
-        assert_eq!(deck.cards.len(), 52);
+        assert_eq!(deck.len(), 52);
+    }
+
+    #[test]
+    fn print_a_card() {
+        let card = Card {
+            suit: Suit::Clubs,
+            rank: Rank::Queen,
+        };
+
+        assert_eq!(card.to_string(), "♣️  Q")
     }
 }
