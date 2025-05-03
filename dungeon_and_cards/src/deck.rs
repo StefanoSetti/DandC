@@ -125,14 +125,8 @@ impl Deck {
             panic!("You are drawing too many cards from the deck!"); // TODO: generate error
         }
 
-        // Split the deck into two parts in O(1) time.
-        let split_idx = len - number_of_draws;
-        let mut drawn = self.cards.split_off(split_idx);
-
-        // Reverse to match "top of deck" semantics (optional).
-        drawn.reverse();
-
-        drawn
+        // Removing cards from the top.
+        self.cards.drain(..number_of_draws).collect()
     }
 }
 
@@ -202,6 +196,12 @@ mod tests {
     fn draw_1_card_and_remove_it_from_deck() {
         let mut deck = Deck::new();
 
+        let first = deck
+            .cards
+            .first()
+            .expect("It would be possible to get the first card on a fresh deck")
+            .clone();
+
         // Draw 1 cars.
         let drawn_card = deck
             .draw(1)
@@ -212,6 +212,9 @@ mod tests {
         // The drawn card should be not contained in the deck anymore.
         assert!(!deck.cards.contains(&drawn_card));
         assert_eq!(deck.len(), 51);
+
+        // Drawn card should be the first card of the deck.
+        assert_eq!(drawn_card, first)
     }
 
     #[test]
