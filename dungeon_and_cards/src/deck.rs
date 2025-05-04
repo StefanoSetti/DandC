@@ -4,20 +4,6 @@ use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-/// A card is the central unit of the game,
-/// each card can have a suit and a rank.
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-struct Card {
-    suit: Suit,
-    rank: Rank,
-}
-
-impl fmt::Display for Card {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}  {}", self.suit, self.rank)
-    }
-}
-
 /// The `suit` can be 1 of 4 types.
 #[derive(EnumIter, Debug, Eq, PartialEq, Clone, Copy, Hash)]
 enum Suit {
@@ -76,31 +62,72 @@ impl fmt::Display for Rank {
     }
 }
 
+/// A card is the central unit of the game,
+/// each card can have a suit and a rank.
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+struct Card {
+    suit: Suit,
+    rank: Rank,
+}
+
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}  {}", self.suit, self.rank)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Deck {
+    /// The array of contained card.
     cards: Vec<Card>,
+    /// The number of cards contained in the
+    /// deck at creation (banned card not counted).
+    size: usize,
+    /// The array of banned cards (can't be drawn).
+    banned_cards: Option<Vec<Card>>,
 }
 
 impl Deck {
-    pub fn new() -> Self {
+    pub fn new(banned_cards: Option<Vec<Card>>) -> Self {
         // Collect iters for `suits` and `ranks`.
         let suits = Suit::iter();
         let ranks = Rank::iter();
 
+        // Pre-allocate vector size.
+        #[allow(unused_assignments)]
+        let mut cards = Vec::with_capacity(52 - banned_cards.as_ref().map_or(0, |b| b.len()));
+
         // NOTE:
         // `map` would give you 4 piles (one per suit), each with 13 cards
         // `flat_map` automatically spreads all 52 cards on one table.
-        let cards = suits
-            .into_iter()
-            .flat_map(|suit| {
-                ranks
-                    .clone() // One rank iterator per suit, so clone needed. (No clone would consume the iterator at the first suit)
-                    .into_iter()
-                    .map(move |rank| Card { suit, rank })
-            })
-            .collect::<Vec<_>>();
+        cards = if let Some(ref banned_cards) = banned_cards {
+            suits
+                .into_iter()
+                .flat_map(|suit| {
+                    ranks
+                        .clone() // One rank iterator per suit, so clone needed. (No clone would consume the iterator at the first suit)
+                        .into_iter()
+                        .map(move |rank| Card { suit, rank })
+                })
+                .filter(|card| !banned_cards.contains(card))
+                .collect::<Vec<_>>()
+        } else {
+            suits
+                .into_iter()
+                .flat_map(|suit| {
+                    ranks
+                        .clone() // One rank iterator per suit, so clone needed. (No clone would consume the iterator at the first suit)
+                        .into_iter()
+                        .map(move |rank| Card { suit, rank })
+                })
+                .collect::<Vec<_>>()
+        };
 
-        Deck { cards }
+        Deck {
+            size: cards.len(),
+            cards,
+            banned_cards: banned_cards,
+        }
     }
 
     /// Returns the number of cards in the deck.
@@ -125,7 +152,7 @@ impl Deck {
             panic!("You are drawing too many cards from the deck!"); // TODO: generate error
         }
 
-        // Removing cards from the top.
+        // Collecting cards from the top.
         self.cards.drain(..number_of_draws).collect()
     }
 }
@@ -136,13 +163,13 @@ mod tests {
 
     #[test]
     fn new_deck_has_52_cards() {
-        let deck = Deck::new();
+        let deck = Deck::new(None);
         assert_eq!(deck.len(), 52);
     }
 
     #[test]
     fn all_cards_in_deck_are_unique() {
-        let deck = Deck::new();
+        let deck = Deck::new(None);
         for i in 0..deck.len() {
             for j in (i + 1)..deck.len() {
                 assert!(
@@ -158,7 +185,7 @@ mod tests {
 
     #[test]
     fn deck_has_13_cards_of_each_suit() {
-        let deck = Deck::new();
+        let deck = Deck::new(None);
         let mut counts = std::collections::HashMap::new();
 
         for card in &deck.cards {
@@ -172,8 +199,25 @@ mod tests {
     }
 
     #[test]
+    fn new_deck_with_2_banned_cards_has_50_cards() {
+        let banned_1 = Card {
+            suit: Suit::Clubs,
+            rank: Rank::Eight,
+        };
+        let banned_2 = Card {
+            suit: Suit::Diamonds,
+            rank: Rank::Ten,
+        };
+
+        let deck = Deck::new(Some(vec![banned_1, banned_2]));
+        assert_eq!(deck.len(), 50);
+        assert!(!deck.cards.contains(&banned_1));
+        assert!(!deck.cards.contains(&banned_2))
+    }
+
+    #[test]
     fn shuffle_randomize_card_order() {
-        let original_deck = Deck::new();
+        let original_deck = Deck::new(None);
         let mut shuffled_deck = original_deck.clone();
 
         // Checks if both decks are equal.
@@ -194,7 +238,7 @@ mod tests {
 
     #[test]
     fn draw_1_card_and_remove_it_from_deck() {
-        let mut deck = Deck::new();
+        let mut deck = Deck::new(None);
 
         let first = deck
             .cards
@@ -219,7 +263,7 @@ mod tests {
 
     #[test]
     fn draw_10_card_and_remove_it_from_deck() {
-        let mut deck = Deck::new();
+        let mut deck = Deck::new(None);
 
         // Draw 10 cars.
         let drawn_card = deck.draw(10);
@@ -231,7 +275,7 @@ mod tests {
 
     #[test]
     fn draw_0_card_and_remove_it_from_deck() {
-        let mut deck = Deck::new();
+        let mut deck = Deck::new(None);
 
         // Draw 0 cars.
         let drawn_card = deck.draw(0);
