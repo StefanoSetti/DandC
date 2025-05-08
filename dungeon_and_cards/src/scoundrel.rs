@@ -4,13 +4,21 @@
 //! where players navigate rooms, battle monsters, and manage resources.
 //!
 
-use crate::{card::Card, deck::Deck, rank::Rank, suit::Suit};
+use crate::{
+    card::{self, Card},
+    deck::Deck,
+    rank::Rank,
+    suit::Suit,
+};
 
 /// Maximum life points a player can have
 pub const MAX_LIFE_POINTS: u8 = 20;
 
 /// Total rooms in the game
 pub const TOTAL_ROOMS: usize = 12;
+
+/// Total number of cards in a room.
+pub const ROOM_SIZE: usize = 4;
 
 /// Represents the current state of the game.
 #[derive(PartialEq, Eq, Debug)]
@@ -21,6 +29,30 @@ enum GameState {
     Win,
     /// The player has lost the game.
     Lose,
+}
+
+/// The character weapon.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Weapon {
+    /// This card represent the weapon equipped.
+    weapon: Card,
+    /// This card represent the stack of monsters slayed with the weapon.
+    /// The weapon can't slay a monster greater or equal to the latest slayed.
+    monster_stack: Vec<Card>,
+}
+
+impl Weapon {
+    fn new(card: Card) -> Self {
+        // TODO: it might be possible to size the monster stack.
+        Self {
+            weapon: card,
+            monster_stack: Vec::new(),
+        }
+    }
+
+    fn monster_stack(&self) -> Vec<Card> {
+        self.monster_stack.clone()
+    }
 }
 
 /// The main game struct representing the player's state
@@ -44,9 +76,11 @@ struct Scoundrel {
     /// Current life points of the character. Maximum is 20.
     life_points: u8,
     /// Currently equipped weapon, if any.
-    weapon_equipped: Option<Card>,
+    weapon_equipped: Option<Weapon>,
     /// Number of rooms the character has visited.
     room_visited: usize,
+    /// Current room visited.
+    room: Vec<Card>,
 }
 
 impl Scoundrel {
@@ -74,6 +108,7 @@ impl Scoundrel {
             life_points: MAX_LIFE_POINTS,
             weapon_equipped: None,
             room_visited: 0,
+            room: Vec::with_capacity(ROOM_SIZE),
         }
     }
 
@@ -89,14 +124,28 @@ impl Scoundrel {
     /// let cards = game.enter_room().expect("First room should succeed");
     /// assert_eq!(cards.len(), 4);
     /// ```
-    pub fn enter_room(&mut self) -> Option<Vec<Card>> {
+    pub fn enter_room(&mut self) -> GameState {
         // In case the deck is over, end the game
         if self.room_visited >= TOTAL_ROOMS {
-            return None;
+            return GameState::Win;
         }
 
         self.room_visited += 1;
-        Some(self.deck.draw(4))
+        match self.room.len() {
+            0 => {
+                // In case new game or ran away from a room, hand is empty.
+                self.room.append(&mut self.deck.draw(4));
+            }
+            1 => {
+                // In case exited a room, hand has 1 card
+                self.room.append(&mut self.deck.draw(3));
+            }
+            _ => {
+                todo!() // TODO: should throw an error, or the room is empty (beginning or run) or has 1 card (standard case)
+            }
+        }
+
+        GameState::InGame
     }
 
     /// Plays a card from hand, modifying game state
@@ -123,7 +172,7 @@ impl Scoundrel {
 
                 self.life_points -= card.rank();
             }
-            Suit::Diamonds => self.weapon_equipped = Some(*card),
+            Suit::Diamonds => self.weapon_equipped = Some(Weapon::new(*card)),
             Suit::Hearts => {
                 self.life_points = (self.life_points + card.rank()).min(20);
             }
@@ -137,8 +186,8 @@ impl Scoundrel {
     }
 
     /// Returns currently equipped weapon, if any
-    pub fn weapon_equipped(&self) -> Option<Card> {
-        self.weapon_equipped
+    pub fn weapon_equipped(&self) -> Option<&Weapon> {
+        self.weapon_equipped.as_ref()
     }
 
     /// Returns number of rooms visited
@@ -229,7 +278,10 @@ mod tests {
         let weapon = Card::new(Suit::Diamonds, Rank::Nine);
 
         game.play_card(&weapon);
-        assert_eq!(game.weapon_equipped, Some(weapon));
+        assert_eq!(
+            game.weapon_equipped().expect("Weapon just equipped").weapon,
+            weapon
+        );
     }
 
     #[test]
@@ -239,13 +291,117 @@ mod tests {
         let weapon = Card::new(Suit::Diamonds, Rank::Nine);
 
         game.play_card(&weapon);
-        assert_eq!(game.weapon_equipped, Some(weapon));
+        assert_eq!(
+            game.weapon_equipped().expect("Weapon just equipped").weapon,
+            weapon
+        );
 
         let new_weapon = Card::new(Suit::Diamonds, Rank::Five);
 
         game.play_card(&new_weapon);
-        assert_eq!(game.weapon_equipped, Some(new_weapon));
-        assert_ne!(game.weapon_equipped, Some(weapon));
+        assert_eq!(
+            game.weapon_equipped().expect("Weapon just equipped").weapon,
+            new_weapon
+        );
+        assert_ne!(
+            game.weapon_equipped().expect("Weapon just equipped").weapon,
+            weapon
+        );
+    }
+
+    #[test]
+    fn fight_a_monster_with_a_weapon() {
+        let mut game = Scoundrel::new();
+
+        let weapon = Card::new(Suit::Diamonds, Rank::Nine);
+
+        game.play_card(&weapon);
+        assert_ne!(
+            game.weapon_equipped().expect("Weapon just equipped").weapon,
+            weapon
+        );
+
+        let monster = Card::new(Suit::Clubs, Rank::Eight);
+        game.play_card(&monster);
+        // Because the monster has lower rank compared to the weapon,
+        // no life-points should be removed, but card should be saved on the weapon's
+        // monster stack.
+        assert_eq!(game.life_points(), 20);
+        assert_eq!(
+            game.weapon_equipped
+                .expect("Weapon has just been equipped")
+                .monster_stack(),
+            vec![monster]
+        );
+    }
+
+    #[test]
+    fn fight_a_monster_with_a_weapon_but_monster_bigger_than_weapon() {
+        let mut game = Scoundrel::new();
+
+        let weapon = Card::new(Suit::Diamonds, Rank::Nine);
+
+        game.play_card(&weapon);
+        assert_ne!(
+            game.weapon_equipped().expect("Weapon just equipped").weapon,
+            weapon
+        );
+
+        let monster = Card::new(Suit::Clubs, Rank::Jack);
+        game.play_card(&monster);
+        // Because the monster has higher rank compared to the weapon,
+        // `monster.rank` - `weapon.rank` () life-points should be removed,
+        // life_points - (monster - weapon) = 20 - (11 - 9)
+        // but card should be saved on the weapon's
+        // monster stack.
+        assert_eq!(game.life_points(), 18);
+        assert_eq!(
+            game.weapon_equipped
+                .expect("Weapon has just been equipped")
+                .monster_stack(),
+            vec![monster]
+        );
+    }
+
+    #[test]
+    fn fight_a_monster_with_a_weapon_but_monster_bigger_than_last_monster() {
+        let mut game = Scoundrel::new();
+
+        let weapon = Card::new(Suit::Diamonds, Rank::Nine);
+
+        game.play_card(&weapon);
+        assert_ne!(
+            game.weapon_equipped().expect("Weapon just equipped").weapon,
+            weapon
+        );
+
+        let monster = Card::new(Suit::Clubs, Rank::Two);
+        game.play_card(&monster);
+        // Because the monster has lower rank compared to the weapon,
+        // no life-points should be removed, but card should be saved on the weapon's
+        // monster stack.
+        assert_eq!(game.life_points(), 20);
+        assert_eq!(
+            game.weapon_equipped
+                .as_ref()
+                .expect("Weapon has just been equipped")
+                .monster_stack(),
+            vec![monster]
+        );
+
+        let new_monster = Card::new(Suit::Clubs, Rank::Ten);
+        game.play_card(&new_monster);
+        // Because the monster has higher rank compared to the weapon latest monster in the stack,
+        // `new_monster` rank life-points should be removed, but card shouldn't be saved on the weapon's
+        // monster stack. It is like the monster if fought barehanded.
+        assert_eq!(game.life_points(), 10);
+        assert_eq!(
+            game.weapon_equipped
+                .expect("Weapon has just been equipped")
+                .monster_stack()
+                .as_ref(),
+            vec![monster]
+        );
     }
 
     #[test]
