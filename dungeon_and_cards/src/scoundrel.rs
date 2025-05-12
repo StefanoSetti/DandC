@@ -5,7 +5,7 @@
 //!
 
 use crate::{
-    card::{self, Card},
+    card::{Card},
     deck::Deck,
     rank::Rank,
     suit::Suit,
@@ -42,6 +42,7 @@ struct Weapon {
 }
 
 impl Weapon {
+        /// Creates a new weapon from a card
     fn new(card: Card) -> Self {
         // TODO: it might be possible to size the monster stack.
         Self {
@@ -84,6 +85,18 @@ struct Scoundrel {
 }
 
 impl Scoundrel {
+        /// Banned cards that are removed from the deck at game start
+    const BANNED_CARDS: &'static [(Suit, Rank)] = &[
+        (Suit::Diamonds, Rank::Ace),
+        (Suit::Diamonds, Rank::Jack),
+        (Suit::Diamonds, Rank::Queen),
+        (Suit::Diamonds, Rank::King),
+        (Suit::Hearts, Rank::Ace),
+        (Suit::Hearts, Rank::Jack),
+        (Suit::Hearts, Rank::Queen),
+        (Suit::Hearts, Rank::King),
+    ];
+
     /// Creates a new Scoundrel game instance
     ///
     /// Initializes with:
@@ -92,16 +105,9 @@ impl Scoundrel {
     /// - No equipped weapon
     /// - Starting room (0)
     pub fn new() -> Self {
-        let banned_cards = vec![
-            Card::new(Suit::Diamonds, Rank::Ace),
-            Card::new(Suit::Diamonds, Rank::Jack),
-            Card::new(Suit::Diamonds, Rank::Queen),
-            Card::new(Suit::Diamonds, Rank::King),
-            Card::new(Suit::Hearts, Rank::Ace),
-            Card::new(Suit::Hearts, Rank::Jack),
-            Card::new(Suit::Hearts, Rank::Queen),
-            Card::new(Suit::Hearts, Rank::King),
-        ];
+        let banned_cards: Vec<_> = Self::BANNED_CARDS.iter()
+            .map(|&(suit, rank)| Card::new(suit, rank))
+            .collect();
 
         Self {
             deck: Deck::builder().ban_cards(banned_cards).build(),
@@ -149,10 +155,19 @@ impl Scoundrel {
     }
 
     fn fight_barehanded(&mut self, monster: &Card) -> GameState {
-        todo!()
+        // In case the rank is higher than the `self.life_points`
+        // the character dies. GAME OVER
+        if monster.rank() >= self.life_points {
+            self.life_points = 0;
+            return GameState::Lose;
+        }
+
+        // In case of barehanded fight, the damage is inflicted directly to the character.
+        self.life_points -= monster.rank();
+        GameState::InGame
     }
 
-    fn fight_with_weapon(&mut self, monster: &Card, weapon: &mut Weapon) -> GameState {
+    fn fight_with_weapon(&mut self, monster: &Card, mut weapon: Weapon) -> (GameState, Weapon) {
         // In case the last monster is smaller than the last one fought
         // the weapon can be used to slay it. Otherwise is is a barehanded fight.
         if weapon
@@ -160,6 +175,7 @@ impl Scoundrel {
             .last()
             .is_some_and(|last_monster| last_monster.rank() < monster.rank())
         {
+            // The attack dealt by the monster is equal to the monster `rank` - weapon `rank`. If 0 no damage inflicted to the character.
             let attack = (monster.rank() - weapon.weapon.rank().into()).max(0); // TODO: maybe fix the into() with an impl
 
             // Save the fight as the latest monster fought.
@@ -169,15 +185,14 @@ impl Scoundrel {
             // the character dies. GAME OVER
             if attack >= self.life_points {
                 self.life_points = 0;
-                return GameState::Lose;
+                return (GameState::Lose, weapon);
             }
 
             self.life_points -= attack;
+            (GameState::InGame, weapon)
         } else {
-            return self.fight_barehanded(monster);
+            (self.fight_barehanded(monster), weapon)
         }
-
-        todo!()
     }
 
     fn handle_combat(&mut self, card: &Card) -> GameState {
@@ -187,19 +202,18 @@ impl Scoundrel {
 
         // In case weapon equipped check if it is possible
         // to use it or if character has to fight barehanded
-        match weapon {
-            Some(mut weapon) => self.fight_with_weapon(card, &mut weapon),
+        let state = match weapon {
+            Some(mut weapon) => {
+                let (state, weapon_updated) = self.fight_with_weapon(card, weapon);
+                self.weapon_equipped = Some(weapon_updated);
+                state
+            
+            },
             None => self.fight_barehanded(card),
         };
 
-        // In case the rank is higher than the `self.life_points`
-        // the character dies. GAME OVER
-        // if card.rank() >= self.life_points {
-        //     self.life_points = 0;
-        //     return GameState::Lose;
-        // }
 
-        todo!()
+        state
     }
 
     /// Plays a card from hand, modifying game state
