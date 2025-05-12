@@ -148,6 +148,60 @@ impl Scoundrel {
         GameState::InGame
     }
 
+    fn fight_barehanded(&mut self, monster: &Card) -> GameState {
+        todo!()
+    }
+
+    fn fight_with_weapon(&mut self, monster: &Card, weapon: &mut Weapon) -> GameState {
+        // In case the last monster is smaller than the last one fought
+        // the weapon can be used to slay it. Otherwise is is a barehanded fight.
+        if weapon
+            .monster_stack
+            .last()
+            .is_some_and(|last_monster| last_monster.rank() < monster.rank())
+        {
+            let attack = (monster.rank() - weapon.weapon.rank().into()).max(0); // TODO: maybe fix the into() with an impl
+
+            // Save the fight as the latest monster fought.
+            weapon.monster_stack.push(*monster);
+
+            // In case the rank is higher than the `self.life_points`
+            // the character dies. GAME OVER
+            if attack >= self.life_points {
+                self.life_points = 0;
+                return GameState::Lose;
+            }
+
+            self.life_points -= attack;
+        } else {
+            return self.fight_barehanded(monster);
+        }
+
+        todo!()
+    }
+
+    fn handle_combat(&mut self, card: &Card) -> GameState {
+        // Explicitly taking ownership of the weapon.
+        // It will be re-equipped after the fight.
+        let weapon = self.weapon_equipped.take();
+
+        // In case weapon equipped check if it is possible
+        // to use it or if character has to fight barehanded
+        match weapon {
+            Some(mut weapon) => self.fight_with_weapon(card, &mut weapon),
+            None => self.fight_barehanded(card),
+        };
+
+        // In case the rank is higher than the `self.life_points`
+        // the character dies. GAME OVER
+        // if card.rank() >= self.life_points {
+        //     self.life_points = 0;
+        //     return GameState::Lose;
+        // }
+
+        todo!()
+    }
+
     /// Plays a card from hand, modifying game state
     ///
     /// # Arguments
@@ -162,16 +216,7 @@ impl Scoundrel {
     /// - **Hearts**: Heals life points equal to rank
     pub fn play_card(&mut self, card: &Card) -> GameState {
         match card.suit() {
-            Suit::Spades | Suit::Clubs => {
-                // In case the rank is higher than the `self.life_points`
-                // the character dies. GAME OVER
-                if card.rank() >= self.life_points {
-                    self.life_points = 0;
-                    return GameState::Lose;
-                }
-
-                self.life_points -= card.rank();
-            }
+            Suit::Spades | Suit::Clubs => return self.handle_combat(card),
             Suit::Diamonds => self.weapon_equipped = Some(Weapon::new(*card)),
             Suit::Hearts => {
                 self.life_points = (self.life_points + card.rank()).min(20);
