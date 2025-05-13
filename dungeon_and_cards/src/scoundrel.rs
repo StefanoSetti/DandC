@@ -4,12 +4,7 @@
 //! where players navigate rooms, battle monsters, and manage resources.
 //!
 
-use crate::{
-    card::{Card},
-    deck::Deck,
-    rank::Rank,
-    suit::Suit,
-};
+use crate::{card::Card, deck::Deck, rank::Rank, suit::Suit};
 
 /// Maximum life points a player can have
 pub const MAX_LIFE_POINTS: u8 = 20;
@@ -38,21 +33,25 @@ struct Weapon {
     weapon: Card,
     /// This card represent the stack of monsters slayed with the weapon.
     /// The weapon can't slay a monster greater or equal to the latest slayed.
-    monster_stack: Vec<Card>,
+    defeated_monsters: Vec<Card>,
 }
 
 impl Weapon {
-        /// Creates a new weapon from a card
+    /// Creates a new weapon from a card
     fn new(card: Card) -> Self {
         // TODO: it might be possible to size the monster stack.
         Self {
             weapon: card,
-            monster_stack: Vec::new(),
+            defeated_monsters: Vec::new(),
         }
     }
 
-    fn monster_stack(&self) -> Vec<Card> {
-        self.monster_stack.clone()
+    fn defeated_monsters(&self) -> Vec<Card> {
+        self.defeated_monsters.clone()
+    }
+
+    fn add_defeated_monster(&mut self, monster: Card) {
+        self.defeated_monsters.push(monster);
     }
 }
 
@@ -82,10 +81,12 @@ struct Scoundrel {
     room_visited: usize,
     /// Current room visited.
     room: Vec<Card>,
+    /// Keeps track if ran away from latest room.
+    has_run_away: bool
 }
 
 impl Scoundrel {
-        /// Banned cards that are removed from the deck at game start
+    /// Banned cards that are removed from the deck at game start
     const BANNED_CARDS: &'static [(Suit, Rank)] = &[
         (Suit::Diamonds, Rank::Ace),
         (Suit::Diamonds, Rank::Jack),
@@ -105,7 +106,8 @@ impl Scoundrel {
     /// - No equipped weapon
     /// - Starting room (0)
     pub fn new() -> Self {
-        let banned_cards: Vec<_> = Self::BANNED_CARDS.iter()
+        let banned_cards: Vec<_> = Self::BANNED_CARDS
+            .iter()
             .map(|&(suit, rank)| Card::new(suit, rank))
             .collect();
 
@@ -115,6 +117,7 @@ impl Scoundrel {
             weapon_equipped: None,
             room_visited: 0,
             room: Vec::with_capacity(ROOM_SIZE),
+            has_run_away: false,
         }
     }
 
@@ -154,6 +157,21 @@ impl Scoundrel {
         GameState::InGame
     }
 
+    pub fn run_away(&mut self) -> Result<(), &'static str> {
+        match self.has_run_away {
+            true => Err("Scoundrel can't run away two rooms in a row"),
+            false => {
+                // It can ran away only from a new room
+                if self.room.len() == 4 {
+                    self.deck.bottom(&mut self.room);
+                    return Ok(());
+                }
+
+                Err("Scoundrel can only run away from a new room (4 cards)")
+            },
+        }
+    }
+
     fn fight_barehanded(&mut self, monster: &Card) -> GameState {
         // In case the rank is higher than the `self.life_points`
         // the character dies. GAME OVER
@@ -167,32 +185,60 @@ impl Scoundrel {
         GameState::InGame
     }
 
+    /// Engages in combat with a monster using the specified weapon.
+    ///
+    /// The combat follows these rules:
+    /// 1. If the weapon hasn't been used against a stronger monster, it can be used:
+    ///    - Monster's attack = monster rank - weapon rank (minimum 0)
+    ///    - If attack ≥ character's life points, character dies
+    ///    - Otherwise, subtract attack from life points
+    /// 2. If weapon cannot be used, falls back to barehanded combat
+    ///
+    /// # Arguments
+    /// * `monster` - The monster card being fought
+    /// * `weapon` - The weapon being used (passed by value to allow modification)
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// 1. Updated game state (InGame, Lose, etc.)
+    /// 2. Modified weapon (with monster added to its history if used)
+    ///
+    /// # Examples
+    /// ```
+    /// let mut character = Character::new();
+    /// let monster = Card::new(/* ... */);
+    /// let weapon = Weapon::new(/* ... */);
+    /// let (state, updated_weapon) = character.fight_with_weapon(&monster, weapon);
+    /// ```
     fn fight_with_weapon(&mut self, monster: &Card, mut weapon: Weapon) -> (GameState, Weapon) {
-        // In case the last monster is smaller than the last one fought
-        // the weapon can be used to slay it. Otherwise is is a barehanded fight.
-        if weapon
-            .monster_stack
-            .last()
-            .is_some_and(|last_monster| last_monster.rank() < monster.rank())
-        {
-            // The attack dealt by the monster is equal to the monster `rank` - weapon `rank`. If 0 no damage inflicted to the character.
-            let attack = (monster.rank() - weapon.weapon.rank().into()).max(0); // TODO: maybe fix the into() with an impl
+        if self.can_slay_with_weapon(monster, &weapon) {
+            let attack_power = self.calculate_attack_power(monster, &weapon);
 
-            // Save the fight as the latest monster fought.
-            weapon.monster_stack.push(*monster);
+            weapon.add_defeated_monster(*monster);
 
-            // In case the rank is higher than the `self.life_points`
-            // the character dies. GAME OVER
-            if attack >= self.life_points {
+            if attack_power >= self.life_points {
                 self.life_points = 0;
                 return (GameState::Lose, weapon);
             }
 
-            self.life_points -= attack;
-            (GameState::InGame, weapon)
+            self.life_points -= attack_power;
+            return (GameState::InGame, weapon);
         } else {
             (self.fight_barehanded(monster), weapon)
         }
+    }
+
+    /// In case last monster defeated is bigger (rank) that the one in fight
+    /// the weapon can be used.
+    fn can_slay_with_weapon(&self, monster: &Card, weapon: &Weapon) -> bool {
+        weapon
+            .defeated_monsters
+            .last()
+            .is_none_or(|last_monster| last_monster.rank() > monster.rank())
+    }
+
+    fn calculate_attack_power(&self, monster: &Card, weapon: &Weapon) -> u8 {
+        (monster.rank() - weapon.weapon.rank().into()).max(0) // TODO: maybe fix the into() with an impl
     }
 
     fn handle_combat(&mut self, card: &Card) -> GameState {
@@ -203,15 +249,13 @@ impl Scoundrel {
         // In case weapon equipped check if it is possible
         // to use it or if character has to fight barehanded
         let state = match weapon {
-            Some(mut weapon) => {
+            Some(weapon) => {
                 let (state, weapon_updated) = self.fight_with_weapon(card, weapon);
                 self.weapon_equipped = Some(weapon_updated);
                 state
-            
-            },
+            }
             None => self.fight_barehanded(card),
         };
-
 
         state
     }
@@ -375,7 +419,7 @@ mod tests {
         let weapon = Card::new(Suit::Diamonds, Rank::Nine);
 
         game.play_card(&weapon);
-        assert_ne!(
+        assert_eq!(
             game.weapon_equipped().expect("Weapon just equipped").weapon,
             weapon
         );
@@ -389,7 +433,7 @@ mod tests {
         assert_eq!(
             game.weapon_equipped
                 .expect("Weapon has just been equipped")
-                .monster_stack(),
+                .defeated_monsters(),
             vec![monster]
         );
     }
@@ -401,7 +445,7 @@ mod tests {
         let weapon = Card::new(Suit::Diamonds, Rank::Nine);
 
         game.play_card(&weapon);
-        assert_ne!(
+        assert_eq!(
             game.weapon_equipped().expect("Weapon just equipped").weapon,
             weapon
         );
@@ -417,7 +461,7 @@ mod tests {
         assert_eq!(
             game.weapon_equipped
                 .expect("Weapon has just been equipped")
-                .monster_stack(),
+                .defeated_monsters(),
             vec![monster]
         );
     }
@@ -429,7 +473,7 @@ mod tests {
         let weapon = Card::new(Suit::Diamonds, Rank::Nine);
 
         game.play_card(&weapon);
-        assert_ne!(
+        assert_eq!(
             game.weapon_equipped().expect("Weapon just equipped").weapon,
             weapon
         );
@@ -444,7 +488,7 @@ mod tests {
             game.weapon_equipped
                 .as_ref()
                 .expect("Weapon has just been equipped")
-                .monster_stack(),
+                .defeated_monsters(),
             vec![monster]
         );
 
@@ -457,7 +501,7 @@ mod tests {
         assert_eq!(
             game.weapon_equipped
                 .expect("Weapon has just been equipped")
-                .monster_stack()
+                .defeated_monsters()
                 .as_ref(),
             vec![monster]
         );
@@ -481,4 +525,27 @@ mod tests {
         game.play_card(&Card::new(Suit::Hearts, Rank::Five));
         assert_eq!(game.life_points, MAX_LIFE_POINTS);
     }
+
+    #[test]
+    fn player_can_run_away_from_a_room_per_time() {
+        let mut game = Scoundrel::new();
+
+        game.enter_room();
+        let res = game.run_away();
+
+        assert!(res.is_ok());
+    
+        let res = game.run_away();
+        assert!(res.is_err()) 
+    }
+
+    #[test]
+    fn player_can_run_away_from_a_room_if_is_in_a_room() {
+        let mut game = Scoundrel::new();
+
+        let res = game.run_away();
+
+        assert!(res.is_err()) 
+    }
+
 }

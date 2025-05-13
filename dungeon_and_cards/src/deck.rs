@@ -133,6 +133,12 @@ impl Deck {
         self.cards.drain(..number_of_draws).collect()
     }
 
+    /// This method puts at the bottom of the deck
+    /// an array of card in the given order.
+    pub fn bottom(&mut self, cards: &mut Vec<Card>) {
+        self.cards.append(cards);
+    }
+
     /// Returns `true` if the deck is empty.
     pub fn is_empty(&self) -> bool {
         self.cards.is_empty()
@@ -327,6 +333,19 @@ mod tests {
         // The array should contain 0 cards.
         assert_eq!(drawn_card.len(), 0);
         assert_eq!(deck.len(), 52);
+    }
+
+    #[test]
+    fn bottom_should_insert_card_at_the_end_of_the_deck() {
+        let mut deck = Deck::builder().build();
+        
+        let drawn_card = deck.draw(4);
+
+        deck.bottom(&mut drawn_card.clone());
+
+        let bottom_cards = &deck.cards[(deck.len()-4)..];
+
+        assert_eq!(bottom_cards, drawn_card);
     }
 
     // #[test]
